@@ -1,0 +1,51 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: copy
+spec:
+  version: v0.1.0
+  homepage: https://github.com/a13x22/kubecopy
+  shortDescription: Copy Kubernetes resources across namespaces and clusters
+  description: |
+    Intelligently copies Kubernetes resources with automatic metadata sanitization
+    and conflict detection. Supports recursive dependency graph traversal to copy
+    a resource along with its ConfigMaps, Secrets, Services, Ingresses, and more.
+
+    Features:
+    - Cross-namespace and cross-cluster copying
+    - Smart sanitization (strips clusterIP, nodePort, PV bindings, etc.)
+    - Conflict detection (existence, address, missing references)
+    - Recursive mode to copy entire dependency graphs
+    - Dry-run mode with table/yaml/json output
+  caveats: |
+    This plugin requires read access to the source namespace/cluster and
+    create access to the target namespace/cluster.
+  platforms:
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    bin: kubectl-copy
+    uri: https://github.com/a13x22/kubecopy/releases/download/v0.1.0/kubectl-copy-linux-amd64.tar.gz
+    sha256: "PLACEHOLDER"
+  - selector:
+      matchLabels:
+        os: linux
+        arch: arm64
+    bin: kubectl-copy
+    uri: https://github.com/a13x22/kubecopy/releases/download/v0.1.0/kubectl-copy-linux-arm64.tar.gz
+    sha256: "PLACEHOLDER"
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+    bin: kubectl-copy
+    uri: https://github.com/a13x22/kubecopy/releases/download/v0.1.0/kubectl-copy-darwin-amd64.tar.gz
+    sha256: "PLACEHOLDER"
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: arm64
+    bin: kubectl-copy
+    uri: https://github.com/a13x22/kubecopy/releases/download/v0.1.0/kubectl-copy-darwin-arm64.tar.gz
+    sha256: "PLACEHOLDER"
