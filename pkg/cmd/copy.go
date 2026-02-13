@@ -51,7 +51,12 @@ func NewCopyCommand() *cobra.Command {
 detecting conflicts to avoid broken or duplicate resources.
 
 Supports copying single resources or entire dependency graphs with --recursive.
-Works across namespaces (same cluster) and across clusters (different context/kubeconfig).`,
+Works across namespaces (same cluster) and across clusters (different context/kubeconfig).
+
+Resource can be specified as:
+  deployment/myapp
+  deployment.apps/myapp
+  deploy/myapp`,
 		Example: `  # Copy a deployment to another namespace
   kubectl copy deployment/myapp --to-namespace staging
 
@@ -102,12 +107,21 @@ Works across namespaces (same cluster) and across clusters (different context/ku
 func (o *Options) Complete(cmd *cobra.Command, args []string) error {
 	o.ResourceArg = args[0]
 
-	// Parse resource/name
+	// Parse resource/name -- supports:
+	//   deployment/myapp
+	//   deployment.apps/myapp    (kubectl get-style with API group)
+	//   deployments.apps/myapp
 	parts := strings.SplitN(o.ResourceArg, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return fmt.Errorf("invalid resource argument %q: expected <resource>/<name>", o.ResourceArg)
 	}
-	o.ResourceKind = strings.ToLower(parts[0])
+
+	// Strip the API group suffix if present (e.g. "deployment.apps" -> "deployment")
+	kindPart := strings.ToLower(parts[0])
+	if dotIdx := strings.Index(kindPart, "."); dotIdx > 0 {
+		kindPart = kindPart[:dotIdx]
+	}
+	o.ResourceKind = kindPart
 	o.ResourceName = parts[1]
 
 	// Default source namespace
@@ -253,7 +267,7 @@ func ResolveGVR(kind string) schema.GroupVersionResource {
 
 // getDefaultNamespace returns the namespace from the current kubeconfig context.
 func getDefaultNamespace(kubeconfig, context string) string {
-	rules := &clientcmd.ClientConfigLoadingRules{}
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfig != "" {
 		rules.ExplicitPath = kubeconfig
 	}
