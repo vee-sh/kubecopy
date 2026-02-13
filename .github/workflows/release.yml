@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  BINARY: kubectl-copy
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race -v ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          LDFLAGS="-s -w -X main.version=${GITHUB_REF_NAME}"
+          go build -trimpath -ldflags "${LDFLAGS}" -o ${BINARY} ./cmd/kubectl-copy
+
+      - name: Package archive
+        run: |
+          tar czf ${BINARY}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ${BINARY}
+          shasum -a 256 ${BINARY}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz \
+            | awk '{print $1}' > ${BINARY}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            ${{ env.BINARY }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            ${{ env.BINARY }}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## Installation
+
+            **Homebrew:**
+            ```
+            brew install vee-sh/tap/kube-copy
+            ```
+
+            **Manual:** download the archive for your platform, extract, and place `kubectl-copy` on your PATH.
+
+            **krew:**
+            ```
+            kubectl krew install copy
+            ```
+
+  publish-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME}"
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}"
+
+          SHA_LINUX_AMD64=$(cat dist/${BINARY}-linux-amd64.tar.gz.sha256)
+          SHA_LINUX_ARM64=$(cat dist/${BINARY}-linux-arm64.tar.gz.sha256)
+          SHA_DARWIN_AMD64=$(cat dist/${BINARY}-darwin-amd64.tar.gz.sha256)
+          SHA_DARWIN_ARM64=$(cat dist/${BINARY}-darwin-arm64.tar.gz.sha256)
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/vee-sh/homebrew-tap.git" tap
+          cd tap
+          mkdir -p Formula
+
+          cat > Formula/kube-copy.rb <<EOF
+          class KubeCopy < Formula
+            desc "kubectl/oc plugin to copy Kubernetes resources across namespaces and clusters"
+            homepage "https://github.com/${GITHUB_REPOSITORY}"
+            version "${VERSION}"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/${BINARY}-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              else
+                url "${BASE_URL}/${BINARY}-darwin-amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/${BINARY}-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              else
+                url "${BASE_URL}/${BINARY}-linux-amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              bin.install "kubectl-copy"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/kubectl-copy --version")
+            end
+          end
+          EOF
+
+          # Strip heredoc indentation
+          sed -i 's/^          //' Formula/kube-copy.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/kube-copy.rb
+          git commit -m "Update kube-copy to ${VERSION}"
+          git push origin HEAD
