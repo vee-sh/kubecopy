@@ -1,0 +1,241 @@
+stages:
+  - test
+  - build
+  - release
+  - publish
+
+variables:
+  BINARY: kubectl-copy
+  HOMEBREW_TAP_REPO: vee-sh/homebrew-tap
+  HOMEBREW_FORMULA: kube-copy
+
+# ---------------------------------------------------------------------------
+# Test
+# ---------------------------------------------------------------------------
+test:
+  stage: test
+  image: golang:1.25
+  script:
+    - go vet ./...
+    - go test -race -v ./...
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+lint:
+  stage: test
+  image: golangci/golangci-lint:latest
+  script:
+    - golangci-lint run ./...
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ---------------------------------------------------------------------------
+# Build -- runs only on tags (vX.Y.Z)
+# ---------------------------------------------------------------------------
+.build_template: &build_template
+  stage: build
+  image: golang:1.25
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  script:
+    - |
+      LDFLAGS="-s -w -X main.version=${CI_COMMIT_TAG}"
+      CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} \
+        go build -trimpath -ldflags "${LDFLAGS}" \
+        -o ${BINARY} ./cmd/kubectl-copy
+    - mkdir -p dist
+    - tar czf dist/${BINARY}-${TARGET_OS}-${TARGET_ARCH}.tar.gz ${BINARY}
+    - sha256sum dist/${BINARY}-${TARGET_OS}-${TARGET_ARCH}.tar.gz | awk '{print $1}' > dist/${BINARY}-${TARGET_OS}-${TARGET_ARCH}.tar.gz.sha256
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+build:linux-amd64:
+  <<: *build_template
+  variables:
+    TARGET_OS: linux
+    TARGET_ARCH: amd64
+
+build:linux-arm64:
+  <<: *build_template
+  variables:
+    TARGET_OS: linux
+    TARGET_ARCH: arm64
+
+build:darwin-amd64:
+  <<: *build_template
+  variables:
+    TARGET_OS: darwin
+    TARGET_ARCH: amd64
+
+build:darwin-arm64:
+  <<: *build_template
+  variables:
+    TARGET_OS: darwin
+    TARGET_ARCH: arm64
+
+# ---------------------------------------------------------------------------
+# Release -- create GitLab release with assets
+# ---------------------------------------------------------------------------
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - upload-packages
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  script:
+    - echo "Creating release ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "kubectl-copy ${CI_COMMIT_TAG}"
+    description: |
+      ## kubectl-copy ${CI_COMMIT_TAG}
+
+      ### Installation
+
+      **Homebrew:**
+      ```
+      brew install vee-sh/tap/kube-copy
+      ```
+
+      **Manual download:** pick the archive for your platform from the assets below,
+      extract, and place `kubectl-copy` somewhere on your PATH.
+
+      **krew:**
+      ```
+      kubectl krew install copy
+      ```
+    assets:
+      links:
+        - name: "${BINARY}-linux-amd64.tar.gz"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${BINARY}/${CI_COMMIT_TAG}/${BINARY}-linux-amd64.tar.gz"
+          filepath: "/${BINARY}-linux-amd64.tar.gz"
+        - name: "${BINARY}-linux-arm64.tar.gz"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${BINARY}/${CI_COMMIT_TAG}/${BINARY}-linux-arm64.tar.gz"
+          filepath: "/${BINARY}-linux-arm64.tar.gz"
+        - name: "${BINARY}-darwin-amd64.tar.gz"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${BINARY}/${CI_COMMIT_TAG}/${BINARY}-darwin-amd64.tar.gz"
+          filepath: "/${BINARY}-darwin-amd64.tar.gz"
+        - name: "${BINARY}-darwin-arm64.tar.gz"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${BINARY}/${CI_COMMIT_TAG}/${BINARY}-darwin-arm64.tar.gz"
+          filepath: "/${BINARY}-darwin-arm64.tar.gz"
+
+# ---------------------------------------------------------------------------
+# Upload archives to the GitLab generic package registry so release links work
+# ---------------------------------------------------------------------------
+upload-packages:
+  stage: release
+  image: curlimages/curl:latest
+  needs:
+    - build:linux-amd64
+    - build:linux-arm64
+    - build:darwin-amd64
+    - build:darwin-arm64
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  script:
+    - |
+      for archive in dist/*.tar.gz; do
+        filename=$(basename "${archive}")
+        echo "Uploading ${filename}..."
+        curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+             --upload-file "${archive}" \
+             "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${BINARY}/${CI_COMMIT_TAG}/${filename}"
+      done
+
+# ---------------------------------------------------------------------------
+# Publish -- update the Homebrew tap formula
+# ---------------------------------------------------------------------------
+publish-homebrew:
+  stage: publish
+  image: alpine:latest
+  needs:
+    - job: upload-packages
+    - job: build:linux-amd64
+      artifacts: true
+    - job: build:linux-arm64
+      artifacts: true
+    - job: build:darwin-amd64
+      artifacts: true
+    - job: build:darwin-arm64
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  variables:
+    # HOMEBREW_TAP_TOKEN must be set in CI/CD variables (Settings > CI/CD > Variables).
+    # It needs write access to the vee-sh/homebrew-tap repository.
+    GIT_STRATEGY: none
+  before_script:
+    - apk add --no-cache git bash coreutils
+  script:
+    - |
+      set -euo pipefail
+
+      VERSION="${CI_COMMIT_TAG}"
+      BASE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${BINARY}/${VERSION}"
+
+      # Read SHA256 checksums produced by the build jobs
+      SHA_LINUX_AMD64=$(cat dist/${BINARY}-linux-amd64.tar.gz.sha256)
+      SHA_LINUX_ARM64=$(cat dist/${BINARY}-linux-arm64.tar.gz.sha256)
+      SHA_DARWIN_AMD64=$(cat dist/${BINARY}-darwin-amd64.tar.gz.sha256)
+      SHA_DARWIN_ARM64=$(cat dist/${BINARY}-darwin-arm64.tar.gz.sha256)
+
+      # Clone the tap repo
+      git clone "https://oauth2:${HOMEBREW_TAP_TOKEN}@${CI_SERVER_HOST}/${HOMEBREW_TAP_REPO}.git" tap
+      cd tap
+      mkdir -p Formula
+
+      # Generate the formula
+      cat > Formula/kube-copy.rb <<FORMULA
+      class KubeCopy < Formula
+        desc "kubectl/oc plugin to copy Kubernetes resources across namespaces and clusters"
+        homepage "${CI_PROJECT_URL}"
+        version "${VERSION}"
+        license "Apache-2.0"
+
+        on_macos do
+          if Hardware::CPU.arm?
+            url "${BASE_URL}/${BINARY}-darwin-arm64.tar.gz"
+            sha256 "${SHA_DARWIN_ARM64}"
+          else
+            url "${BASE_URL}/${BINARY}-darwin-amd64.tar.gz"
+            sha256 "${SHA_DARWIN_AMD64}"
+          end
+        end
+
+        on_linux do
+          if Hardware::CPU.arm?
+            url "${BASE_URL}/${BINARY}-linux-arm64.tar.gz"
+            sha256 "${SHA_LINUX_ARM64}"
+          else
+            url "${BASE_URL}/${BINARY}-linux-amd64.tar.gz"
+            sha256 "${SHA_LINUX_AMD64}"
+          end
+        end
+
+        def install
+          bin.install "kubectl-copy"
+        end
+
+        test do
+          assert_match version.to_s, shell_output("#{bin}/kubectl-copy --version")
+        end
+      end
+      FORMULA
+
+      # Strip leading whitespace (heredoc indentation)
+      sed -i 's/^      //' Formula/kube-copy.rb
+
+      # Commit and push
+      git config user.name "GitLab CI"
+      git config user.email "ci@${CI_SERVER_HOST}"
+      git add Formula/kube-copy.rb
+      git commit -m "Update kube-copy to ${VERSION}"
+      git push origin HEAD

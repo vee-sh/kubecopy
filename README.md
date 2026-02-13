@@ -7,10 +7,16 @@ ClusterIPs and NodePorts, removing PV bindings, and detecting conflicts before t
 
 ## Installation
 
+### Via Homebrew
+
+```bash
+brew install vee-sh/tap/kube-copy
+```
+
 ### From source
 
 ```bash
-git clone https://github.com/a13x22/kubecopy.git
+git clone <repo-url>
 cd kubecopy
 make install
 ```
@@ -155,11 +161,47 @@ make build
 # Run tests
 make test
 
-# Cross-compile for all platforms
+# Cross-compile for all platforms (produces tarballs + sha256 in dist/)
 make cross-build
 
 # Lint
 make lint
+```
+
+## Releasing
+
+Releases are automated via GitLab CI. To cut a new release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The pipeline will:
+
+1. Run tests and linting
+2. Cross-compile binaries for linux/darwin on amd64/arm64
+3. Upload tarballs to the GitLab generic package registry
+4. Create a GitLab release with download links
+5. Push an updated Homebrew formula to the `vee-sh/homebrew-tap` repository
+
+### CI/CD Variables
+
+The following variable must be set in **Settings > CI/CD > Variables** for the
+Homebrew tap publish step to work:
+
+| Variable | Description |
+|----------|-------------|
+| `HOMEBREW_TAP_TOKEN` | GitLab personal or project access token with write access to `vee-sh/homebrew-tap` |
+
+### Setting up the Homebrew tap repo
+
+Create the repository `vee-sh/homebrew-tap` on GitLab (if it does not exist yet).
+The CI pipeline will automatically create and update `Formula/kube-copy.rb` on
+each tagged release. Users install via:
+
+```bash
+brew install vee-sh/tap/kube-copy
 ```
 
 ## License

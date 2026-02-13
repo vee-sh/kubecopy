@@ -29,10 +29,13 @@ cross-build:
 	@mkdir -p dist
 	@for platform in $(PLATFORMS); do \
 		GOOS=$${platform%%/*} GOARCH=$${platform##*/} \
-		go build $(GOFLAGS) -ldflags "$(LDFLAGS)" \
-			-o dist/$(BINARY)-$${platform%%/*}-$${platform##*/} \
-			./cmd/kubectl-copy ; \
-		echo "Built dist/$(BINARY)-$${platform%%/*}-$${platform##*/}"; \
+		CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" \
+			-o $(BINARY) ./cmd/kubectl-copy ; \
+		tar czf dist/$(BINARY)-$${platform%%/*}-$${platform##*/}.tar.gz $(BINARY) ; \
+		shasum -a 256 dist/$(BINARY)-$${platform%%/*}-$${platform##*/}.tar.gz \
+			| awk '{print $$1}' > dist/$(BINARY)-$${platform%%/*}-$${platform##*/}.tar.gz.sha256 ; \
+		rm -f $(BINARY) ; \
+		echo "Built dist/$(BINARY)-$${platform%%/*}-$${platform##*/}.tar.gz"; \
 	done
 
 # Generate krew plugin manifest (for local testing)
