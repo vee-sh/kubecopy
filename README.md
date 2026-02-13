@@ -170,34 +170,32 @@ make lint
 
 ## Releasing
 
-Releases are automated via GitLab CI. To cut a new release:
+Releases are automated via GitHub Actions. To cut a new release:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The pipeline will:
+The workflow will:
 
 1. Run tests and linting
 2. Cross-compile binaries for linux/darwin on amd64/arm64
-3. Upload tarballs to the GitLab generic package registry
-4. Create a GitLab release with download links
-5. Push an updated Homebrew formula to the `vee-sh/homebrew-tap` repository
+3. Create a GitHub Release with the tarballs attached
+4. Push an updated Homebrew formula to the `vee-sh/homebrew-tap` repository
 
-### CI/CD Variables
+### Repository Secrets
 
-The following variable must be set in **Settings > CI/CD > Variables** for the
-Homebrew tap publish step to work:
+The following secret must be set in **Settings > Secrets and variables > Actions**:
 
-| Variable | Description |
-|----------|-------------|
-| `HOMEBREW_TAP_TOKEN` | GitLab personal or project access token with write access to `vee-sh/homebrew-tap` |
+| Secret | Description |
+|--------|-------------|
+| `HOMEBREW_TAP_TOKEN` | GitHub personal access token (classic) with `repo` scope, granting write access to `vee-sh/homebrew-tap` |
 
 ### Setting up the Homebrew tap repo
 
-Create the repository `vee-sh/homebrew-tap` on GitLab (if it does not exist yet).
-The CI pipeline will automatically create and update `Formula/kube-copy.rb` on
+Create the repository `vee-sh/homebrew-tap` on GitHub (if it does not exist yet).
+The workflow will automatically create and update `Formula/kube-copy.rb` on
 each tagged release. Users install via:
 
 ```bash
