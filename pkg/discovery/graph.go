@@ -41,7 +41,7 @@ func Discover(ctx context.Context, client dynamic.Interface, gvr schema.GroupVer
 		obj *unstructured.Unstructured
 		ref copier.ResourceRef
 	}
-	queue := []queueItem{{obj: primaryObj, ref: copier.ResourceRef{GVR: gvr, Name: name, Namespace: namespace}}}
+	queue := []queueItem{{obj: primaryObj, ref: copier.ResourceRef{GVR: gvr, Kind: gvrKind(gvr), Name: name, Namespace: namespace}}}
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -168,6 +168,7 @@ func findMatchingServices(ctx context.Context, client dynamic.Interface, namespa
 		if match {
 			refs = append(refs, copier.ResourceRef{
 				GVR:       svcGVR,
+				Kind:      "Service",
 				Name:      svc.GetName(),
 				Namespace: namespace,
 			})
@@ -194,6 +195,7 @@ func findIngressesForService(ctx context.Context, client dynamic.Interface, name
 		if ingressReferencesService(ing, serviceName) {
 			refs = append(refs, copier.ResourceRef{
 				GVR:       ingGVR,
+				Kind:      "Ingress",
 				Name:      ing.GetName(),
 				Namespace: namespace,
 			})
@@ -289,6 +291,7 @@ func findHPAsForResource(ctx context.Context, client dynamic.Interface, namespac
 		if refKind == kind && refName == name {
 			refs = append(refs, copier.ResourceRef{
 				GVR:       hpaGVR,
+				Kind:      "HorizontalPodAutoscaler",
 				Name:      hpa.GetName(),
 				Namespace: namespace,
 			})
@@ -297,4 +300,29 @@ func findHPAsForResource(ctx context.Context, client dynamic.Interface, namespac
 	}
 
 	return refs, objs
+}
+
+// gvrKind maps a GVR resource name to a human-friendly Kind string.
+func gvrKind(gvr schema.GroupVersionResource) string {
+	kinds := map[string]string{
+		"deployments":               "Deployment",
+		"statefulsets":              "StatefulSet",
+		"daemonsets":                "DaemonSet",
+		"replicasets":               "ReplicaSet",
+		"pods":                      "Pod",
+		"services":                  "Service",
+		"configmaps":                "ConfigMap",
+		"secrets":                   "Secret",
+		"serviceaccounts":           "ServiceAccount",
+		"persistentvolumeclaims":    "PersistentVolumeClaim",
+		"ingresses":                 "Ingress",
+		"jobs":                      "Job",
+		"cronjobs":                  "CronJob",
+		"horizontalpodautoscalers":  "HorizontalPodAutoscaler",
+		"networkpolicies":           "NetworkPolicy",
+	}
+	if k, ok := kinds[gvr.Resource]; ok {
+		return k
+	}
+	return gvr.Resource
 }

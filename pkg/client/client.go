@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -98,4 +99,65 @@ func buildMapper(cfg *rest.Config) (meta.RESTMapper, error) {
 		return nil, err
 	}
 	return restmapper.NewDiscoveryRESTMapper(groups), nil
+}
+
+// ResolvedResource holds a resolved GVR and the proper Kind name from the API server.
+type ResolvedResource struct {
+	GVR  schema.GroupVersionResource
+	Kind string // e.g. "Deployment", "Service" -- from the API server
+}
+
+// Resolve takes a user-provided resource string (e.g. "deployment", "deploy",
+// "deployments", "deployments.apps") and resolves it against the source cluster's
+// API discovery, just like kubectl does. Returns the GVR and proper Kind name.
+func (c *Clients) Resolve(resource string) (ResolvedResource, error) {
+	// The REST mapper handles all the heavy lifting:
+	// - plural/singular ("deployment" / "deployments")
+	// - short names ("deploy", "svc", "cm", "po", etc.)
+	// - resource.group format ("deployments.apps")
+	// - CRDs and any other API-server-registered resource
+	gvr, err := resolveGVR(c.SourceMapper, resource)
+	if err != nil {
+		return ResolvedResource{}, fmt.Errorf("cannot resolve resource type %q: %w\n    Run 'kubectl api-resources' to see available types.", resource, err)
+	}
+
+	// Get the Kind name from the mapper
+	kind := kindForGVR(c.SourceMapper, gvr)
+
+	return ResolvedResource{GVR: gvr, Kind: kind}, nil
+}
+
+// resolveGVR uses the REST mapper to convert a user-provided resource string
+// to a fully qualified GroupVersionResource.
+func resolveGVR(mapper meta.RESTMapper, resource string) (schema.GroupVersionResource, error) {
+	// Try as a fully qualified resource first (handles "deployments.apps" format)
+	fullySpecifiedGVR, groupResource := schema.ParseResourceArg(resource)
+	if fullySpecifiedGVR != nil {
+		// Validate it exists
+		if _, err := mapper.RESTMapping(schema.GroupKind{Group: fullySpecifiedGVR.Group, Kind: ""}, fullySpecifiedGVR.Version); err == nil {
+			return *fullySpecifiedGVR, nil
+		}
+	}
+
+	// Use the mapper to resolve short names, plural, singular
+	gvr, err := mapper.ResourceFor(groupResource.WithVersion(""))
+	if err != nil {
+		return schema.GroupVersionResource{}, err
+	}
+
+	return gvr, nil
+}
+
+// kindForGVR looks up the Kind string for a GVR from the REST mapper.
+func kindForGVR(mapper meta.RESTMapper, gvr schema.GroupVersionResource) string {
+	gvk, err := mapper.KindFor(gvr)
+	if err != nil {
+		// Fallback: capitalize the resource name
+		r := gvr.Resource
+		if len(r) > 0 {
+			return string(r[0]-32) + r[1:]
+		}
+		return r
+	}
+	return gvk.Kind
 }
