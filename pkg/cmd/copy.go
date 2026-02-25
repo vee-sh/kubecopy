@@ -10,10 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/a13x22/kubecopy/pkg/client"
-	"github.com/a13x22/kubecopy/pkg/copier"
-	"github.com/a13x22/kubecopy/pkg/discovery"
-	"github.com/a13x22/kubecopy/pkg/output"
+	"github.com/a13x22/kube-copy/pkg/client"
+	"github.com/a13x22/kube-copy/pkg/copier"
+	"github.com/a13x22/kube-copy/pkg/discovery"
+	"github.com/a13x22/kube-copy/pkg/output"
 )
 
 // Options holds all flags and parsed arguments for the copy command.
@@ -144,7 +144,7 @@ func (o *Options) Complete(cmd *cobra.Command, args []string) error {
 		o.ToNamespace = o.SourceNamespace
 	}
 
-	// Validate: same namespace + no rename = conflict
+	// Validate: same namespace + no rename = conflict (for namespaced resources)
 	if o.ToNamespace == o.SourceNamespace && o.ToName == "" && o.ToContext == "" && o.ToKubeconfig == "" {
 		return fmt.Errorf("copying within the same namespace requires --to-name to avoid name collision")
 	}
@@ -198,10 +198,19 @@ func (o *Options) Run() error {
 	}
 
 	primaryRef := copier.ResourceRef{
-		GVR:       resolved.GVR,
-		Kind:      resolved.Kind,
-		Name:      o.ResourceName,
-		Namespace: o.SourceNamespace,
+		GVR:        resolved.GVR,
+		Kind:       resolved.Kind,
+		Name:       o.ResourceName,
+		Namespace:  o.SourceNamespace,
+		Namespaced: resolved.Namespaced,
+	}
+	if !resolved.Namespaced {
+		primaryRef.Namespace = ""
+	}
+
+	// Cluster-scoped in same cluster requires --to-name to avoid overwriting
+	if !primaryRef.Namespaced && o.ToName == "" && o.ToContext == "" && o.ToKubeconfig == "" {
+		return fmt.Errorf("copying a cluster-scoped resource (e.g. StorageClass) in the same cluster requires --to-name")
 	}
 
 	// Build list of resources to copy
@@ -226,8 +235,14 @@ func (o *Options) Run() error {
 		Progress:     prog,
 	}
 
+	// Target namespace is empty for cluster-scoped resources
+	toNamespace := o.ToNamespace
+	if !primaryRef.Namespaced {
+		toNamespace = ""
+	}
+
 	// Phase 1: Plan (fetch, sanitize, detect conflicts)
-	planned := c.PlanAll(ctx, refs, o.ToNamespace, o.ToName)
+	planned := c.PlanAll(ctx, refs, toNamespace, o.ToName)
 	prog.Clear()
 
 	// Show the plan

@@ -97,6 +97,16 @@ jobs:
             kubectl krew install copy
             ```
 
+  publish-krew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update krew-index
+        uses: rajatjindal/krew-release-bot@v0.0.46
+        with:
+          krew_template_file: .krew.yaml
+
   publish-homebrew:
     needs: release
     runs-on: ubuntu-latest
@@ -165,8 +175,12 @@ jobs:
           # Strip heredoc indentation
           sed -i 's/^          //' Formula/kube-copy.rb
 
+          # Create an alias so "brew install vee-sh/tap/kubecopy" keeps working
+          mkdir -p Aliases
+          ln -sf ../Formula/kube-copy.rb Aliases/kubecopy
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/kube-copy.rb
+          git add Formula/kube-copy.rb Aliases/kubecopy
           git commit -m "Update kube-copy to ${VERSION}"
           git push origin HEAD

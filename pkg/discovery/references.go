@@ -4,7 +4,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/a13x22/kubecopy/pkg/copier"
+	"github.com/a13x22/kube-copy/pkg/copier"
 )
 
 // extractForwardRefs finds all resources that the given object depends on:
@@ -20,36 +20,40 @@ func extractForwardRefs(obj *unstructured.Unstructured, namespace string) []copi
 	// ConfigMaps
 	for _, name := range extractConfigMapNames(podSpec) {
 		refs = append(refs, copier.ResourceRef{
-			GVR:       schema.GroupVersionResource{Version: "v1", Resource: "configmaps"},
-			Name:      name,
-			Namespace: namespace,
+			GVR:        schema.GroupVersionResource{Version: "v1", Resource: "configmaps"},
+			Name:       name,
+			Namespace:  namespace,
+			Namespaced: true,
 		})
 	}
 
 	// Secrets
 	for _, name := range extractSecretNames(podSpec) {
 		refs = append(refs, copier.ResourceRef{
-			GVR:       schema.GroupVersionResource{Version: "v1", Resource: "secrets"},
-			Name:      name,
-			Namespace: namespace,
+			GVR:        schema.GroupVersionResource{Version: "v1", Resource: "secrets"},
+			Name:       name,
+			Namespace:  namespace,
+			Namespaced: true,
 		})
 	}
 
 	// PVCs
 	for _, name := range extractPVCNames(podSpec) {
 		refs = append(refs, copier.ResourceRef{
-			GVR:       schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"},
-			Name:      name,
-			Namespace: namespace,
+			GVR:        schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"},
+			Name:       name,
+			Namespace:  namespace,
+			Namespaced: true,
 		})
 	}
 
 	// ServiceAccount
 	if sa := extractServiceAccountName(podSpec); sa != "" && sa != "default" {
 		refs = append(refs, copier.ResourceRef{
-			GVR:       schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"},
-			Name:      sa,
-			Namespace: namespace,
+			GVR:        schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"},
+			Name:       sa,
+			Namespace:  namespace,
+			Namespaced: true,
 		})
 	}
 

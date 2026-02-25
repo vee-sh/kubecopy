@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
-	"github.com/a13x22/kubecopy/pkg/copier"
+	"github.com/a13x22/kube-copy/pkg/copier"
 )
 
 // refKey uniquely identifies a resource for cycle detection.
@@ -41,7 +41,7 @@ func Discover(ctx context.Context, client dynamic.Interface, gvr schema.GroupVer
 		obj *unstructured.Unstructured
 		ref copier.ResourceRef
 	}
-	queue := []queueItem{{obj: primaryObj, ref: copier.ResourceRef{GVR: gvr, Kind: gvrKind(gvr), Name: name, Namespace: namespace}}}
+	queue := []queueItem{{obj: primaryObj, ref: copier.ResourceRef{GVR: gvr, Kind: gvrKind(gvr), Name: name, Namespace: namespace, Namespaced: true}}}
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -167,10 +167,11 @@ func findMatchingServices(ctx context.Context, client dynamic.Interface, namespa
 
 		if match {
 			refs = append(refs, copier.ResourceRef{
-				GVR:       svcGVR,
-				Kind:      "Service",
-				Name:      svc.GetName(),
-				Namespace: namespace,
+				GVR:        svcGVR,
+				Kind:       "Service",
+				Name:       svc.GetName(),
+				Namespace:  namespace,
+				Namespaced: true,
 			})
 			objs = append(objs, svc)
 		}
@@ -194,10 +195,11 @@ func findIngressesForService(ctx context.Context, client dynamic.Interface, name
 		ing := &ingList.Items[i]
 		if ingressReferencesService(ing, serviceName) {
 			refs = append(refs, copier.ResourceRef{
-				GVR:       ingGVR,
-				Kind:      "Ingress",
-				Name:      ing.GetName(),
-				Namespace: namespace,
+				GVR:        ingGVR,
+				Kind:       "Ingress",
+				Name:       ing.GetName(),
+				Namespace:  namespace,
+				Namespaced: true,
 			})
 			objs = append(objs, ing)
 		}
@@ -290,10 +292,11 @@ func findHPAsForResource(ctx context.Context, client dynamic.Interface, namespac
 		refName, _ := scaleRef["name"].(string)
 		if refKind == kind && refName == name {
 			refs = append(refs, copier.ResourceRef{
-				GVR:       hpaGVR,
-				Kind:      "HorizontalPodAutoscaler",
-				Name:      hpa.GetName(),
-				Namespace: namespace,
+				GVR:        hpaGVR,
+				Kind:       "HorizontalPodAutoscaler",
+				Name:       hpa.GetName(),
+				Namespace:  namespace,
+				Namespaced: true,
 			})
 			objs = append(objs, hpa)
 		}

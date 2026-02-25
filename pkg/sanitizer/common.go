@@ -40,10 +40,8 @@ func SanitizeCommon(obj *unstructured.Unstructured, targetNamespace, targetName 
 	// ---- Strip status ----
 	delete(obj.Object, "status")
 
-	// ---- Rewrite namespace ----
-	if targetNamespace != "" {
-		obj.SetNamespace(targetNamespace)
-	}
+	// ---- Rewrite namespace (empty for cluster-scoped resources) ----
+	obj.SetNamespace(targetNamespace)
 
 	// ---- Rewrite name ----
 	if targetName != "" {

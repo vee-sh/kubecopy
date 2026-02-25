@@ -103,13 +103,14 @@ func buildMapper(cfg *rest.Config) (meta.RESTMapper, error) {
 
 // ResolvedResource holds a resolved GVR and the proper Kind name from the API server.
 type ResolvedResource struct {
-	GVR  schema.GroupVersionResource
-	Kind string // e.g. "Deployment", "Service" -- from the API server
+	GVR        schema.GroupVersionResource
+	Kind       string // e.g. "Deployment", "Service" -- from the API server
+	Namespaced bool   // false for cluster-scoped (StorageClass, Node, ClusterRole, etc.)
 }
 
 // Resolve takes a user-provided resource string (e.g. "deployment", "deploy",
 // "deployments", "deployments.apps") and resolves it against the source cluster's
-// API discovery, just like kubectl does. Returns the GVR and proper Kind name.
+// API discovery, just like kubectl does. Returns the GVR, Kind, and whether the resource is namespaced.
 func (c *Clients) Resolve(resource string) (ResolvedResource, error) {
 	// The REST mapper handles all the heavy lifting:
 	// - plural/singular ("deployment" / "deployments")
@@ -121,10 +122,25 @@ func (c *Clients) Resolve(resource string) (ResolvedResource, error) {
 		return ResolvedResource{}, fmt.Errorf("cannot resolve resource type %q: %w\n    Run 'kubectl api-resources' to see available types.", resource, err)
 	}
 
-	// Get the Kind name from the mapper
+	// Get the Kind name and scope from the mapper
 	kind := kindForGVR(c.SourceMapper, gvr)
+	namespaced := isNamespaced(c.SourceMapper, gvr)
 
-	return ResolvedResource{GVR: gvr, Kind: kind}, nil
+	return ResolvedResource{GVR: gvr, Kind: kind, Namespaced: namespaced}, nil
+}
+
+// isNamespaced returns true if the resource is namespaced, false if cluster-scoped.
+func isNamespaced(mapper meta.RESTMapper, gvr schema.GroupVersionResource) bool {
+	gvk, err := mapper.KindFor(gvr)
+	if err != nil {
+		return true // default to namespaced for safety
+	}
+	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvr.Version)
+	if err != nil {
+		return true
+	}
+	// Scope.Name() is "namespace" for namespaced resources, "root" for cluster-scoped.
+	return mapping.Scope.Name() != "root"
 }
 
 // resolveGVR uses the REST mapper to convert a user-provided resource string

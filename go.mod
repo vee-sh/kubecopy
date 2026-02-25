@@ -1,4 +1,4 @@
-module github.com/a13x22/kubecopy
+module github.com/a13x22/kube-copy
 
 go 1.25.0
 

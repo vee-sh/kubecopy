@@ -33,13 +33,17 @@ func Detect(ctx context.Context, targetClient dynamic.Interface, gvr schema.Grou
 	name := obj.GetName()
 	identifier := fmt.Sprintf("%s/%s", obj.GetKind(), name)
 
-	// 1. Existence check
+	// 1. Existence check (targetNS is empty for cluster-scoped resources)
 	_, err := targetClient.Resource(gvr).Namespace(targetNS).Get(ctx, name, metav1.GetOptions{})
 	if err == nil {
+		msg := fmt.Sprintf("%s already exists in namespace %q", identifier, targetNS)
+		if targetNS == "" {
+			msg = fmt.Sprintf("%s already exists", identifier)
+		}
 		conflicts = append(conflicts, Conflict{
 			Type:     TypeExistence,
 			Resource: identifier,
-			Message:  fmt.Sprintf("%s already exists in namespace %q", identifier, targetNS),
+			Message:  msg,
 		})
 	}
 

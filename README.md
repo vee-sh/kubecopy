@@ -17,7 +17,7 @@ brew install vee-sh/tap/kube-copy
 
 ```bash
 git clone <repo-url>
-cd kubecopy
+cd kube-copy
 make install
 ```
 
@@ -182,7 +182,8 @@ The workflow will:
 1. Run tests and linting
 2. Cross-compile binaries for linux/darwin on amd64/arm64
 3. Create a GitHub Release with the tarballs attached
-4. Push an updated Homebrew formula to the `vee-sh/homebrew-tap` repository
+4. Submit a PR to `kubernetes-sigs/krew-index` via `krew-release-bot`
+5. Push an updated Homebrew formula to the `vee-sh/homebrew-tap` repository
 
 ### Repository Secrets
 
@@ -191,6 +192,20 @@ The following secret must be set in **Settings > Secrets and variables > Actions
 | Secret | Description |
 |--------|-------------|
 | `HOMEBREW_TAP_TOKEN` | GitHub personal access token (classic) with `repo` scope, granting write access to `vee-sh/homebrew-tap` |
+
+### Setting up the krew-index
+
+The release workflow uses
+[krew-release-bot](https://github.com/rajatjindal/krew-release-bot) to
+automatically open a PR against `kubernetes-sigs/krew-index` on each tagged
+release. For this to work:
+
+1. The `.krew.yaml` template in the repo root must be present (already included).
+2. Enable the `krew-release-bot` GitHub App on this repository
+   (see [setup instructions](https://github.com/rajatjindal/krew-release-bot#setup)).
+
+Once the initial PR is merged into the krew-index, subsequent releases are
+picked up automatically.
 
 ### Setting up the Homebrew tap repo
 

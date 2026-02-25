@@ -9,16 +9,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
-	"github.com/a13x22/kubecopy/pkg/conflict"
-	"github.com/a13x22/kubecopy/pkg/sanitizer"
+	"github.com/a13x22/kube-copy/pkg/conflict"
+	"github.com/a13x22/kube-copy/pkg/sanitizer"
 )
 
 // ResourceRef uniquely identifies a Kubernetes resource to be copied.
 type ResourceRef struct {
-	GVR       schema.GroupVersionResource
-	Kind      string // human-friendly kind, e.g. "Deployment"
-	Name      string
-	Namespace string
+	GVR        schema.GroupVersionResource
+	Kind       string // human-friendly kind, e.g. "Deployment"
+	Name       string
+	Namespace  string
+	Namespaced bool // false for cluster-scoped (StorageClass, Node, ClusterRole, etc.)
 }
 
 // DisplayName returns "Kind/Name" for human-friendly display.
@@ -92,9 +93,13 @@ func (c *Copier) Plan(ctx context.Context, ref ResourceRef, targetNS, targetName
 
 	p := c.progress()
 
-	// 1. Fetch from source
+	// 1. Fetch from source (use empty namespace for cluster-scoped resources)
+	srcNS := ref.Namespace
+	if !ref.Namespaced {
+		srcNS = ""
+	}
 	p.Fetching(ref.DisplayName(), ref.Namespace)
-	obj, err := c.SourceClient.Resource(ref.GVR).Namespace(ref.Namespace).Get(ctx, ref.Name, metav1.GetOptions{})
+	obj, err := c.SourceClient.Resource(ref.GVR).Namespace(srcNS).Get(ctx, ref.Name, metav1.GetOptions{})
 	if err != nil {
 		result.Error = FormatFetchError(err, ref)
 		return result
@@ -141,6 +146,9 @@ func (c *Copier) Apply(ctx context.Context, planned *CopyResult) {
 	targetNS := planned.TargetNS
 	targetName := planned.TargetName
 	copied := planned.Sanitized
+	if !ref.Namespaced {
+		targetNS = ""
+	}
 
 	p := c.progress()
 	p.Creating(ref.DisplayName(), targetNS)

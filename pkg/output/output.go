@@ -9,7 +9,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/a13x22/kubecopy/pkg/copier"
+	"github.com/a13x22/kube-copy/pkg/copier"
 )
 
 // ANSI color codes

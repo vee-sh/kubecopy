@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	copycmd "github.com/a13x22/kubecopy/pkg/cmd"
+	copycmd "github.com/a13x22/kube-copy/pkg/cmd"
 )
 
 // version is set at build time via -ldflags.
